@@ -1,0 +1,46 @@
+{
+  "pageName": "HomePage",
+  "description": "Locators for the Home Page",
+  "locators": {
+    "welcomeMessage": {
+      "type": "css",
+      "value": ".welcome-message",
+      "description": "Welcome message after login"
+    },
+    "userProfileDropdown": {
+      "type": "id",
+      "value": "userProfile",
+      "description": "User profile dropdown"
+    },
+    "logoutButton": {
+      "type": "xpath",
+      "value": "//button[contains(text(),'Logout')]",
+      "description": "Logout button"
+    },
+    "navigationMenu": {
+      "type": "css",
+      "value": "nav.main-navigation",
+      "description": "Main navigation menu"
+    },
+    "searchInput": {
+      "type": "id",
+      "value": "searchBox",
+      "description": "Search input field"
+    },
+    "searchButton": {
+      "type": "css",
+      "value": "button.search-btn",
+      "description": "Search button"
+    },
+    "dashboardLink": {
+      "type": "linkText",
+      "value": "Dashboard",
+      "description": "Dashboard navigation link"
+    },
+    "settingsLink": {
+      "type": "xpath",
+      "value": "//a[@href='/settings']",
+      "description": "Settings navigation link"
+    }
+  }
+}

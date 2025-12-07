@@ -1,0 +1,82 @@
+# =============================================================================
+# AWS CodeBuild Buildspec for Test Automation
+# =============================================================================
+# This buildspec is used by AWS CodePipeline/CodeBuild to run tests.
+# Configure the pipeline in AWS Console to trigger manually or on events.
+# =============================================================================
+
+version: 0.2
+
+env:
+  variables:
+    JAVA_HOME: "/usr/lib/jvm/java-11-amazon-corretto"
+    MAVEN_OPTS: "-Xmx3072m"
+    TEST_SUITE: "smoke"
+    BROWSER: "chrome"
+    HEADLESS: "true"
+  
+  # Secrets from AWS Secrets Manager or Parameter Store
+  # Configure these in AWS Console
+  secrets-manager:
+    BASE_URL: "test-automation/secrets:BASE_URL"
+    API_BASE_URL: "test-automation/secrets:API_BASE_URL"
+    TEST_USERNAME: "test-automation/secrets:TEST_USERNAME"
+    TEST_PASSWORD: "test-automation/secrets:TEST_PASSWORD"
+
+phases:
+  install:
+    runtime-versions:
+      java: corretto11
+    commands:
+      - echo "Installing dependencies..."
+      - yum install -y google-chrome-stable || true
+      - wget -q https://dl.google.com/linux/direct/google-chrome-stable_current_x86_64.rpm
+      - yum install -y ./google-chrome-stable_current_x86_64.rpm || true
+      - google-chrome --version || echo "Chrome installation skipped"
+      
+      # Install Xvfb for headless browser
+      - yum install -y xorg-x11-server-Xvfb
+      - Xvfb :99 -screen 0 1920x1080x24 &
+      - export DISPLAY=:99
+
+  pre_build:
+    commands:
+      - echo "Pre-build phase..."
+      - java -version
+      - mvn -version
+      - echo "Test Suite: $TEST_SUITE"
+      - echo "Browser: $BROWSER"
+      - echo "Headless: $HEADLESS"
+
+  build:
+    commands:
+      - echo "Running tests..."
+      - export DISPLAY=:99
+      - mvn clean test -P${TEST_SUITE} -Dbrowser=${BROWSER} -Dheadless=${HEADLESS}
+
+  post_build:
+    commands:
+      - echo "Generating reports..."
+      - mvn allure:report || true
+      - echo "Build completed on `date`"
+
+reports:
+  test-reports:
+    files:
+      - '**/*'
+    base-directory: 'target/surefire-reports'
+    file-format: JUNITXML
+
+artifacts:
+  files:
+    - 'target/allure-results/**/*'
+    - 'target/site/allure-maven-plugin/**/*'
+    - 'target/reports/**/*'
+    - 'target/screenshots/**/*'
+    - 'target/logs/**/*'
+  name: test-artifacts-$(date +%Y-%m-%d)
+  discard-paths: no
+
+cache:
+  paths:
+    - '/root/.m2/**/*'

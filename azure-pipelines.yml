@@ -1,0 +1,193 @@
+# =============================================================================
+# Azure DevOps Pipeline for Test Automation
+# =============================================================================
+# This pipeline is configured to NOT run automatically.
+# It must be triggered manually from Azure DevOps UI.
+# =============================================================================
+
+# Disable automatic triggers - manual only
+trigger: none
+pr: none
+
+# Uncomment below to enable automatic triggers
+# trigger:
+#   branches:
+#     include:
+#       - main
+#       - develop
+#   paths:
+#     exclude:
+#       - '*.md'
+#       - 'docs/*'
+
+parameters:
+  - name: testSuite
+    displayName: 'Test Suite'
+    type: string
+    default: 'smoke'
+    values:
+      - smoke
+      - regression
+      - api
+      - all
+
+  - name: browser
+    displayName: 'Browser'
+    type: string
+    default: 'chrome'
+    values:
+      - chrome
+      - firefox
+      - edge
+
+  - name: environment
+    displayName: 'Environment'
+    type: string
+    default: 'qa'
+    values:
+      - qa
+      - staging
+      - production
+
+  - name: headless
+    displayName: 'Run Headless'
+    type: boolean
+    default: true
+
+variables:
+  - name: MAVEN_CACHE_FOLDER
+    value: $(Pipeline.Workspace)/.m2/repository
+  - name: MAVEN_OPTS
+    value: '-Dmaven.repo.local=$(MAVEN_CACHE_FOLDER) -Xmx3072m'
+  - name: JAVA_VERSION
+    value: '11'
+
+stages:
+  - stage: Test
+    displayName: 'Run Tests'
+    jobs:
+      - job: RunTests
+        displayName: 'Execute Test Suite'
+        pool:
+          vmImage: 'ubuntu-latest'
+        
+        steps:
+          - task: JavaToolInstaller@0
+            displayName: 'Install JDK $(JAVA_VERSION)'
+            inputs:
+              versionSpec: '$(JAVA_VERSION)'
+              jdkArchitectureOption: 'x64'
+              jdkSourceOption: 'PreInstalled'
+
+          - task: Cache@2
+            displayName: 'Cache Maven packages'
+            inputs:
+              key: 'maven | "$(Agent.OS)" | **/pom.xml'
+              restoreKeys: |
+                maven | "$(Agent.OS)"
+              path: $(MAVEN_CACHE_FOLDER)
+
+          - script: |
+              sudo apt-get update
+              sudo apt-get install -y google-chrome-stable
+              google-chrome --version
+            displayName: 'Install Chrome'
+
+          - script: |
+              sudo apt-get install -y xvfb
+              Xvfb :99 -screen 0 1920x1080x24 &
+              export DISPLAY=:99
+            displayName: 'Setup Display'
+
+          - task: Maven@3
+            displayName: 'Run Tests'
+            inputs:
+              mavenPomFile: 'pom.xml'
+              goals: 'clean test'
+              options: '-P${{ parameters.testSuite }} -Dbrowser=${{ parameters.browser }} -Dheadless=${{ parameters.headless }}'
+              publishJUnitResults: true
+              testResultsFiles: '**/surefire-reports/TEST-*.xml'
+              javaHomeOption: 'JDKVersion'
+              jdkVersionOption: '1.$(JAVA_VERSION)'
+              mavenVersionOption: 'Default'
+              mavenOptions: '$(MAVEN_OPTS)'
+            env:
+              BASE_URL: $(BASE_URL)
+              API_BASE_URL: $(API_BASE_URL)
+              TEST_USERNAME: $(TEST_USERNAME)
+              TEST_PASSWORD: $(TEST_PASSWORD)
+              DISPLAY: ':99'
+
+          - task: Maven@3
+            displayName: 'Generate Allure Report'
+            condition: always()
+            inputs:
+              mavenPomFile: 'pom.xml'
+              goals: 'allure:report'
+              javaHomeOption: 'JDKVersion'
+              jdkVersionOption: '1.$(JAVA_VERSION)'
+
+          - task: PublishTestResults@2
+            displayName: 'Publish Test Results'
+            condition: always()
+            inputs:
+              testResultsFormat: 'JUnit'
+              testResultsFiles: '**/target/surefire-reports/*.xml'
+              mergeTestResults: true
+              failTaskOnFailedTests: false
+
+          - task: PublishBuildArtifacts@1
+            displayName: 'Publish Allure Results'
+            condition: always()
+            inputs:
+              PathtoPublish: 'target/allure-results'
+              ArtifactName: 'allure-results'
+              publishLocation: 'Container'
+
+          - task: PublishBuildArtifacts@1
+            displayName: 'Publish Allure Report'
+            condition: always()
+            inputs:
+              PathtoPublish: 'target/site/allure-maven-plugin'
+              ArtifactName: 'allure-report'
+              publishLocation: 'Container'
+
+          - task: PublishBuildArtifacts@1
+            displayName: 'Publish Extent Report'
+            condition: always()
+            inputs:
+              PathtoPublish: 'target/reports'
+              ArtifactName: 'extent-report'
+              publishLocation: 'Container'
+
+          - task: PublishBuildArtifacts@1
+            displayName: 'Publish Screenshots'
+            condition: failed()
+            inputs:
+              PathtoPublish: 'target/screenshots'
+              ArtifactName: 'screenshots'
+              publishLocation: 'Container'
+
+          - task: PublishBuildArtifacts@1
+            displayName: 'Publish Logs'
+            condition: always()
+            inputs:
+              PathtoPublish: 'target/logs'
+              ArtifactName: 'logs'
+              publishLocation: 'Container'
+
+  - stage: Notify
+    displayName: 'Send Notifications'
+    dependsOn: Test
+    condition: always()
+    jobs:
+      - job: SendNotification
+        displayName: 'Send Email Notification'
+        pool:
+          vmImage: 'ubuntu-latest'
+        steps:
+          - script: |
+              echo "Test execution completed!"
+              echo "Check the artifacts for detailed reports."
+            displayName: 'Notification Placeholder'
+          # Add your notification logic here (Email, Slack, Teams, etc.)

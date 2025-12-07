@@ -1,0 +1,198 @@
+# =============================================================================
+# AWS CloudFormation Template for Test Automation Pipeline
+# =============================================================================
+# This template creates the necessary AWS resources for running tests.
+# Deploy this template to set up the CI/CD pipeline in AWS.
+# =============================================================================
+
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Test Automation Pipeline Infrastructure'
+
+Parameters:
+  ProjectName:
+    Type: String
+    Default: 'test-automation'
+    Description: 'Name of the project'
+  
+  GitHubOwner:
+    Type: String
+    Description: 'GitHub repository owner'
+  
+  GitHubRepo:
+    Type: String
+    Description: 'GitHub repository name'
+  
+  GitHubBranch:
+    Type: String
+    Default: 'main'
+    Description: 'GitHub branch to monitor'
+  
+  GitHubToken:
+    Type: String
+    NoEcho: true
+    Description: 'GitHub personal access token'
+
+Resources:
+  # S3 Bucket for artifacts
+  ArtifactBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub '${ProjectName}-artifacts-${AWS::AccountId}'
+      VersioningConfiguration:
+        Status: Enabled
+      LifecycleConfiguration:
+        Rules:
+          - Id: DeleteOldArtifacts
+            Status: Enabled
+            ExpirationInDays: 30
+
+  # CodeBuild IAM Role
+  CodeBuildRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${ProjectName}-codebuild-role'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: codebuild.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: CodeBuildPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                  - s3:GetBucketLocation
+                Resource:
+                  - !GetAtt ArtifactBucket.Arn
+                  - !Sub '${ArtifactBucket.Arn}/*'
+              - Effect: Allow
+                Action:
+                  - secretsmanager:GetSecretValue
+                Resource: '*'
+
+  # CodeBuild Project
+  CodeBuildProject:
+    Type: AWS::CodeBuild::Project
+    Properties:
+      Name: !Sub '${ProjectName}-build'
+      Description: 'Build project for test automation'
+      ServiceRole: !GetAtt CodeBuildRole.Arn
+      Artifacts:
+        Type: CODEPIPELINE
+      Environment:
+        Type: LINUX_CONTAINER
+        ComputeType: BUILD_GENERAL1_MEDIUM
+        Image: aws/codebuild/amazonlinux2-x86_64-standard:4.0
+        PrivilegedMode: true
+        EnvironmentVariables:
+          - Name: TEST_SUITE
+            Value: smoke
+          - Name: BROWSER
+            Value: chrome
+          - Name: HEADLESS
+            Value: 'true'
+      Source:
+        Type: CODEPIPELINE
+        BuildSpec: aws-codepipeline/buildspec.yml
+      TimeoutInMinutes: 60
+      Cache:
+        Type: LOCAL
+        Modes:
+          - LOCAL_CUSTOM_CACHE
+
+  # CodePipeline IAM Role
+  CodePipelineRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${ProjectName}-codepipeline-role'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: codepipeline.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: CodePipelinePolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                  - s3:GetBucketVersioning
+                Resource:
+                  - !GetAtt ArtifactBucket.Arn
+                  - !Sub '${ArtifactBucket.Arn}/*'
+              - Effect: Allow
+                Action:
+                  - codebuild:BatchGetBuilds
+                  - codebuild:StartBuild
+                Resource: !GetAtt CodeBuildProject.Arn
+
+  # CodePipeline
+  Pipeline:
+    Type: AWS::CodePipeline::Pipeline
+    Properties:
+      Name: !Sub '${ProjectName}-pipeline'
+      RoleArn: !GetAtt CodePipelineRole.Arn
+      ArtifactStore:
+        Type: S3
+        Location: !Ref ArtifactBucket
+      Stages:
+        - Name: Source
+          Actions:
+            - Name: SourceAction
+              ActionTypeId:
+                Category: Source
+                Owner: ThirdParty
+                Provider: GitHub
+                Version: '1'
+              Configuration:
+                Owner: !Ref GitHubOwner
+                Repo: !Ref GitHubRepo
+                Branch: !Ref GitHubBranch
+                OAuthToken: !Ref GitHubToken
+                PollForSourceChanges: false  # Manual trigger only
+              OutputArtifacts:
+                - Name: SourceOutput
+        - Name: Test
+          Actions:
+            - Name: RunTests
+              ActionTypeId:
+                Category: Build
+                Owner: AWS
+                Provider: CodeBuild
+                Version: '1'
+              Configuration:
+                ProjectName: !Ref CodeBuildProject
+              InputArtifacts:
+                - Name: SourceOutput
+              OutputArtifacts:
+                - Name: TestOutput
+
+Outputs:
+  ArtifactBucketName:
+    Description: 'S3 bucket for artifacts'
+    Value: !Ref ArtifactBucket
+  
+  CodeBuildProjectName:
+    Description: 'CodeBuild project name'
+    Value: !Ref CodeBuildProject
+  
+  PipelineName:
+    Description: 'CodePipeline name'
+    Value: !Ref Pipeline

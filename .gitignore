@@ -1,0 +1,96 @@
+# =============================================================================
+# Git Ignore File for Java Selenium Automation Framework
+# =============================================================================
+
+# Compiled class files
+*.class
+
+# Log files
+*.log
+logs/
+
+# Package Files
+*.jar
+*.war
+*.nar
+*.ear
+*.zip
+*.tar.gz
+*.rar
+
+# Maven
+target/
+pom.xml.tag
+pom.xml.releaseBackup
+pom.xml.versionsBackup
+pom.xml.next
+release.properties
+dependency-reduced-pom.xml
+buildNumber.properties
+.mvn/timing.properties
+.mvn/wrapper/maven-wrapper.jar
+
+# IDE - IntelliJ IDEA
+.idea/
+*.iws
+*.iml
+*.ipr
+out/
+
+# IDE - Eclipse
+.apt_generated
+.classpath
+.factorypath
+.project
+.settings
+.springBeans
+.sts4-cache
+bin/
+
+# IDE - NetBeans
+/nbproject/private/
+/nbbuild/
+/dist/
+/nbdist/
+/.nb-gradle/
+
+# IDE - VS Code
+.vscode/
+
+# OS Generated Files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Environment and Configuration Files (IMPORTANT - Contains sensitive data)
+env.properties
+.env
+*.env
+src/main/resources/config/env.properties
+
+# Test Output
+test-output/
+screenshots/
+target/screenshots/
+target/reports/
+target/allure-results/
+allure-results/
+allure-report/
+
+# Extent Reports
+extent-reports/
+ExtentReports/
+
+# Temporary files
+*.tmp
+*.temp
+*.swp
+*~
+
+# Chrome/Browser Debug Data
+chrome_debug_profile/
+browser_debug_data/

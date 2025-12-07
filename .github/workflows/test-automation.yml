@@ -1,0 +1,172 @@
+# =============================================================================
+# GitHub Actions Workflow for Test Automation
+# =============================================================================
+# This workflow is DISABLED by default (workflow_dispatch only)
+# To enable automatic runs, uncomment the push/pull_request triggers below
+# =============================================================================
+
+name: Test Automation Pipeline
+
+on:
+  # Manual trigger only - uncomment below to enable automatic runs
+  workflow_dispatch:
+    inputs:
+      test_suite:
+        description: 'Test suite to run'
+        required: true
+        default: 'smoke'
+        type: choice
+        options:
+          - smoke
+          - regression
+          - api
+          - all
+      browser:
+        description: 'Browser to use'
+        required: true
+        default: 'chrome'
+        type: choice
+        options:
+          - chrome
+          - firefox
+          - edge
+      environment:
+        description: 'Environment to test'
+        required: true
+        default: 'qa'
+        type: choice
+        options:
+          - qa
+          - staging
+          - production
+
+  # UNCOMMENT BELOW TO ENABLE AUTOMATIC RUNS ON PUSH/PR
+  # push:
+  #   branches: [ main, develop ]
+  #   paths-ignore:
+  #     - '**.md'
+  #     - 'docs/**'
+  # pull_request:
+  #   branches: [ main, develop ]
+  #   paths-ignore:
+  #     - '**.md'
+  #     - 'docs/**'
+
+env:
+  JAVA_VERSION: '11'
+  MAVEN_OPTS: '-Xmx3072m'
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Set up JDK ${{ env.JAVA_VERSION }}
+        uses: actions/setup-java@v4
+        with:
+          java-version: ${{ env.JAVA_VERSION }}
+          distribution: 'temurin'
+          cache: maven
+      
+      - name: Set up Chrome
+        uses: browser-actions/setup-chrome@v1
+        with:
+          chrome-version: stable
+      
+      - name: Set up ChromeDriver
+        uses: nanasess/setup-chromedriver@v2
+      
+      - name: Start Xvfb (for headless browser)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb
+          Xvfb :99 -screen 0 1920x1080x24 &
+          echo "DISPLAY=:99" >> $GITHUB_ENV
+      
+      - name: Cache Maven packages
+        uses: actions/cache@v3
+        with:
+          path: ~/.m2/repository
+          key: ${{ runner.os }}-maven-${{ hashFiles('**/pom.xml') }}
+          restore-keys: |
+            ${{ runner.os }}-maven-
+      
+      - name: Run Tests
+        env:
+          BASE_URL: ${{ secrets.BASE_URL }}
+          API_BASE_URL: ${{ secrets.API_BASE_URL }}
+          TEST_USERNAME: ${{ secrets.TEST_USERNAME }}
+          TEST_PASSWORD: ${{ secrets.TEST_PASSWORD }}
+          BROWSER: ${{ github.event.inputs.browser || 'chrome' }}
+          HEADLESS: 'true'
+        run: |
+          TEST_SUITE=${{ github.event.inputs.test_suite || 'smoke' }}
+          mvn clean test -P${TEST_SUITE} -Dbrowser=${BROWSER} -Dheadless=true
+      
+      - name: Generate Allure Report
+        if: always()
+        run: |
+          mvn allure:report
+      
+      - name: Upload Allure Results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: allure-results
+          path: target/allure-results
+          retention-days: 30
+      
+      - name: Upload Allure Report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: allure-report
+          path: target/site/allure-maven-plugin
+          retention-days: 30
+      
+      - name: Upload Extent Report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: extent-report
+          path: target/reports
+          retention-days: 30
+      
+      - name: Upload Screenshots
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: screenshots
+          path: target/screenshots
+          retention-days: 30
+      
+      - name: Upload Test Logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-logs
+          path: target/logs
+          retention-days: 30
+      
+      - name: Publish Allure Report to GitHub Pages
+        if: always() && github.ref == 'refs/heads/main'
+        uses: peaceiris/actions-gh-pages@v3
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: target/site/allure-maven-plugin
+          destination_dir: allure-report
+
+  notify:
+    needs: test
+    runs-on: ubuntu-latest
+    if: always()
+    
+    steps:
+      - name: Send Notification
+        if: ${{ needs.test.result == 'failure' }}
+        run: |
+          echo "Tests failed! Notification would be sent here."
+          # Add your notification logic (Slack, Email, etc.)
